@@ -7,5 +7,6 @@ RUN apt update && apt install -y \
   && rm -rf /var/lib/apt/lists/*
 RUN pip install gsplat
 RUN pip install -r requirements.txt
-RUN rm -r data/360_v2 && python datasets/download_dataset.py
+RUN [ -d data/360_v2 ] && rm -rf data/360_v2
+RUN python datasets/download_dataset.py
 CMD ["python","simple_trainer_mcmc.py"]
