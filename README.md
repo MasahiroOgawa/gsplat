@@ -38,7 +38,7 @@ First install docker, and [NVIDIA Container Toolkit](https://docs.nvidia.com/dat
 Then in the top directory, run below.
 ```bash
 docker build -t gsplat .
-docker container run -it --rm --gpus all --name gslat gsplat
+docker container run -it --rm --gpus all --name gslat -p 8080:8080 gsplat
 ```
 
 ## Evaluation

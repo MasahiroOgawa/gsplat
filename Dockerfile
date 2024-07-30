@@ -7,5 +7,5 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 RUN pip install gsplat
 RUN pip install -r requirements.txt
-RUN if [ -d data/360_v2 ]; then rm -rf data/360_v2; fi
+RUN if [ -L data/360_v2 ]; then rm -rf data/360_v2; fi
 RUN python datasets/download_dataset.py
