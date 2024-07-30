@@ -9,4 +9,3 @@ RUN pip install gsplat
 RUN pip install -r requirements.txt
 RUN if [ -d data/360_v2 ]; then rm -rf data/360_v2; fi
 RUN python datasets/download_dataset.py
-CMD ["python","simple_trainer_mcmc.py"]
