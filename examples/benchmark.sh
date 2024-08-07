@@ -1,4 +1,5 @@
 RESULT_DIR=results/benchmark
+mkdir -p $RESULT_DIR
 
 for SCENE in bicycle bonsai counter garden kitchen room stump;
 do
