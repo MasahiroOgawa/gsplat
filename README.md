@@ -37,7 +37,7 @@ You can use docker for installation and running Gaussian Splatting MCMC by the f
 First install docker, and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 Then in the top directory, run below.
 ```bash
-docker build -t gsplat .
+docker build -t gsplat -f docker/Dockerfile .
 docker container run -it --rm --gpus all --name gslat -p 8080:8080 gsplat
 ```
 

@@ -43,7 +43,7 @@ _C = None
 
 try:
     # try to import the compiled module (via setup.py)
-    from gsplat import csrc as _C
+    from gsplat.cuda import csrc as _C
 except ImportError:
     # if failed, try with JIT compilation
     if cuda_toolkit_available():
