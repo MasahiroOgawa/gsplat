@@ -36,11 +36,14 @@ pip install gsplat --index-url https://docs.gsplat.studio/whl/pt20cu118
 To build gsplat from source on Windows, please check [this instruction](docs/INSTALL_WIN.md).
 
 ### Install using uv
+First, install uv.
 ```bash
-uv add torch torchvision torchaudio
-uv add --dev gsplat
-uv pip install --no-build-isolation git+https://github.com/rahul-goel/fused-ssim@1272e21a282342e89537159e4bad508b19b34157
-uv pip install -r examples/requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then, set up.
+```bash
+uv sync
 ```
 
 ## Evaluation
