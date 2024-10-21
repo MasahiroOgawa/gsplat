@@ -12,7 +12,7 @@ gsplat is an open-source library for CUDA accelerated rasterization of gaussians
 </div>
 
 ## Installation
-
+### option a: native install
 **Dependence**: Please install [Pytorch](https://pytorch.org/get-started/locally/) first.
 
 The easiest way is to install from PyPI. In this way it will build the CUDA code **on the first run** (JIT).
@@ -34,6 +34,15 @@ pip install gsplat --index-url https://docs.gsplat.studio/whl/pt20cu118
 ```
 
 To build gsplat from source on Windows, please check [this instruction](docs/INSTALL_WIN.md).
+
+### option b. docker
+You can use docker for installation and running Gaussian Splatting MCMC by the following method.
+First install docker, and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+Then in the top directory, run below.
+```bash
+docker build -t gsplat -f docker/Dockerfile .
+docker container run -it --rm --gpus all --name gslat -p 8080:8080 gsplat
+```
 
 ## Evaluation
 
