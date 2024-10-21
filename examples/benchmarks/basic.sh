@@ -1,3 +1,6 @@
+# Set the library path to use a specific version of libstdc++
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+
 SCENE_DIR="data/360_v2"
 RESULT_DIR="results/benchmark"
 SCENE_LIST="garden bicycle stump bonsai counter kitchen room" # treehill flowers
