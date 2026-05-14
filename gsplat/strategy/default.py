@@ -1,11 +1,26 @@
+# SPDX-FileCopyrightText: Copyright 2024-2025 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple, Union
 
 import torch
+from typing_extensions import Literal
 
 from .base import Strategy
 from .ops import duplicate, remove, reset_opa, split
-from typing_extensions import Literal
 
 
 @dataclass
@@ -192,7 +207,7 @@ class DefaultStrategy(Strategy):
                 state["radii"].zero_()
             torch.cuda.empty_cache()
 
-        if step % self.reset_every == 0:
+        if step % self.reset_every == 0 and step > 0:
             reset_opa(
                 params=params,
                 optimizers=optimizers,
@@ -240,14 +255,13 @@ class DefaultStrategy(Strategy):
         if packed:
             # grads is [nnz, 2]
             gs_ids = info["gaussian_ids"]  # [nnz]
-            radii = info["radii"]  # [nnz]
+            radii = info["radii"].max(dim=-1).values  # [nnz]
         else:
             # grads is [C, N, 2]
-            sel = info["radii"] > 0.0  # [C, N]
+            sel = (info["radii"] > 0.0).all(dim=-1)  # [C, N]
             gs_ids = torch.where(sel)[1]  # [nnz]
             grads = grads[sel]  # [nnz, 2]
-            radii = info["radii"][sel]  # [nnz]
-
+            radii = info["radii"][sel].max(dim=-1).values  # [nnz]
         state["grad2d"].index_add_(0, gs_ids, grads.norm(dim=-1))
         state["count"].index_add_(
             0, gs_ids, torch.ones_like(gs_ids, dtype=torch.float32)

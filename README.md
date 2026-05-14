@@ -11,6 +11,16 @@ gsplat is an open-source library for CUDA accelerated rasterization of gaussians
   <video src="https://github.com/nerfstudio-project/gsplat/assets/10151885/64c2e9ca-a9a6-4c7e-8d6f-47eeacd15159" width="100%" />
 </div>
 
+## News
+
+[Jan 2026] [PPISP](https://research.nvidia.com/labs/sil/projects/ppisp/) is integrated as an alternative way of bilateral grid to compensate the training views.
+
+[May 2025] Arbitrary batching (over multiple scenes and multiple viewpoints) is supported now!! Checkout [here](docs/batch.md) for more details! Kudos to [Junchen Liu](https://junchenliu77.github.io/).
+
+[May 2025] [Jonathan Stephens](https://x.com/jonstephens85) makes a great [tutorial video](https://www.youtube.com/watch?v=ACPTiP98Pf8) for Windows users on how to install gsplat and get start with 3DGUT.
+
+[April 2025] [NVIDIA 3DGUT](https://research.nvidia.com/labs/toronto-ai/3DGUT/) is now integrated in gsplat! Checkout [here](docs/3dgut.md) for more details. [[NVIDIA Tech Blog]](https://developer.nvidia.com/blog/revolutionizing-neural-reconstruction-and-rendering-in-gsplat-with-3dgut/) [[NVIDIA Sweepstakes]](https://www.nvidia.com/en-us/research/3dgut-sweepstakes/)
+
 ## Installation
 
 **Dependence**: Please install [Pytorch](https://pytorch.org/get-started/locally/) first.
@@ -62,41 +72,42 @@ bash benchmarks/basic.sh
 ## Examples
 
 We provide a set of examples to get you started! Below you can find the details about
-the examples (requires to install some exta dependencies via `pip install -r examples/requirements.txt`)
+the examples (requires installing some extrra dependencies via `pip install -r examples/requirements.txt --no-build-isolation`)
 
 - [Train a 3D Gaussian splatting model on a COLMAP capture.](https://docs.gsplat.studio/main/examples/colmap.html)
 - [Fit a 2D image with 3D Gaussians.](https://docs.gsplat.studio/main/examples/image.html)
 - [Render a large scene in real-time.](https://docs.gsplat.studio/main/examples/large_scale.html)
+- [Train on an NCore v4 capture.](https://docs.gsplat.studio/main/examples/ncore.html)
 
 
 ## Development and Contribution
 
 This repository was born from the curiosity of people on the Nerfstudio team trying to understand a new rendering technique. We welcome contributions of any kind and are open to feedback, bug-reports, and improvements to help expand the capabilities of this software.
 
-This project is developed by the following wonderful contributors (unordered):
+This project is developed by the contributors coming from following institutes (unordered):
 
-- [Angjoo Kanazawa](https://people.eecs.berkeley.edu/~kanazawa/) (UC Berkeley): Mentor of the project.
-- [Matthew Tancik](https://www.matthewtancik.com/about-me) (Luma AI): Mentor of the project.
-- [Vickie Ye](https://people.eecs.berkeley.edu/~vye/) (UC Berkeley): Project lead. v0.1 lead.
-- [Matias Turkulainen](https://maturk.github.io/) (Aalto University): Core developer.
-- [Ruilong Li](https://www.liruilong.cn/) (UC Berkeley): Core developer. v1.0 lead.
-- [Justin Kerr](https://kerrj.github.io/) (UC Berkeley): Core developer.
-- [Brent Yi](https://github.com/brentyi) (UC Berkeley): Core developer.
-- [Zhuoyang Pan](https://panzhy.com/) (ShanghaiTech University): Core developer.
-- [Jianbo Ye](http://www.jianboye.org/) (Amazon): Core developer.
+- UC Berkeley
+- NVIDIA
+- ShanghaiTech University
+- Amazon
+- Meta
+- IIIT
+- LumaAI
+- SpectacularAI
+- Aalto University
+- CMU
 
 We also have a white paper with about the project with benchmarking and mathematical supplement with conventions and derivations, available [here](https://arxiv.org/abs/2409.06765). If you find this library useful in your projects or papers, please consider citing:
 
 ```
-@article{ye2024gsplatopensourcelibrarygaussian,
-    title={gsplat: An Open-Source Library for {Gaussian} Splatting}, 
-    author={Vickie Ye and Ruilong Li and Justin Kerr and Matias Turkulainen and Brent Yi and Zhuoyang Pan and Otto Seiskari and Jianbo Ye and Jeffrey Hu and Matthew Tancik and Angjoo Kanazawa},
-    year={2024},
-    eprint={2409.06765},
-    journal={arXiv preprint arXiv:2409.06765},
-    archivePrefix={arXiv},
-    primaryClass={cs.CV},
-    url={https://arxiv.org/abs/2409.06765}, 
+@article{ye2025gsplat,
+  title={gsplat: An open-source library for Gaussian splatting},
+  author={Ye, Vickie and Li, Ruilong and Kerr, Justin and Turkulainen, Matias and Yi, Brent and Pan, Zhuoyang and Seiskari, Otto and Ye, Jianbo and Hu, Jeffrey and Tancik, Matthew and Angjoo Kanazawa},
+  journal={Journal of Machine Learning Research},
+  volume={26},
+  number={34},
+  pages={1--17},
+  year={2025}
 }
 ```
 

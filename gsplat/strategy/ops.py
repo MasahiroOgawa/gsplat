@@ -1,3 +1,19 @@
+# SPDX-FileCopyrightText: Copyright 2023-2026 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
 import numpy as np
 from typing import Callable, Dict, List, Union
 
@@ -8,6 +24,19 @@ from torch import Tensor
 from gsplat import quat_scale_to_covar_preci
 from gsplat.relocation import compute_relocation
 from gsplat.utils import normalized_quat_to_rotmat
+
+_MCMC_BACKEND_TORCH = {"torch", "pytorch", "py"}
+_MCMC_BACKEND_CUDA = {"cuda", "native", ""}
+_raw = os.environ.get("GSPLAT_MCMC_BACKEND", "").strip().lower()
+_force_torch_backend = _raw in _MCMC_BACKEND_TORCH
+if _raw and _raw not in _MCMC_BACKEND_TORCH | _MCMC_BACKEND_CUDA:
+    import warnings
+
+    warnings.warn(
+        f"GSPLAT_MCMC_BACKEND={_raw!r} not recognised; using default (CUDA with"
+        f" fallback). Valid: {sorted(_MCMC_BACKEND_TORCH | _MCMC_BACKEND_CUDA)}",
+        stacklevel=2,
+    )
 
 
 @torch.no_grad()
@@ -68,19 +97,25 @@ def _update_param_with_optimizer(
         names = list(params.keys())
 
     for name in names:
+        param = params[name]
+        new_param = param_fn(name, param)
+        params[name] = new_param
+        if name not in optimizers:
+            assert not param.requires_grad, (
+                f"Optimizer for {name} is not found, but the parameter is trainable."
+                f"Got requires_grad={param.requires_grad}"
+            )
+            continue
         optimizer = optimizers[name]
-        for i, param_group in enumerate(optimizer.param_groups):
-            p = param_group["params"][0]
-            p_state = optimizer.state[p]
-            del optimizer.state[p]
-            for key in p_state.keys():
+        for i in range(len(optimizer.param_groups)):
+            param_state = optimizer.state[param]
+            del optimizer.state[param]
+            for key in param_state.keys():
                 if key != "step":
-                    v = p_state[key]
-                    p_state[key] = optimizer_fn(key, v)
-            p_new = param_fn(name, p)
-            optimizer.param_groups[i]["params"] = [p_new]
-            optimizer.state[p_new] = p_state
-            params[name] = p_new
+                    v = param_state[key]
+                    param_state[key] = optimizer_fn(key, v)
+            optimizer.param_groups[i]["params"] = [new_param]
+            optimizer.state[new_param] = param_state
 
 
 @torch.no_grad()
@@ -101,7 +136,7 @@ def duplicate(
     sel = torch.where(mask)[0]
 
     def param_fn(name: str, p: Tensor) -> Tensor:
-        return torch.nn.Parameter(torch.cat([p, p[sel]]))
+        return torch.nn.Parameter(torch.cat([p, p[sel]]), requires_grad=p.requires_grad)
 
     def optimizer_fn(key: str, v: Tensor) -> Tensor:
         return torch.cat([v, torch.zeros((len(sel), *v.shape[1:]), device=device)])
@@ -157,7 +192,7 @@ def split(
         else:
             p_split = p[sel].repeat(repeats)
         p_new = torch.cat([p[rest], p_split])
-        p_new = torch.nn.Parameter(p_new)
+        p_new = torch.nn.Parameter(p_new, requires_grad=p.requires_grad)
         return p_new
 
     def optimizer_fn(key: str, v: Tensor) -> Tensor:
@@ -191,7 +226,7 @@ def remove(
     sel = torch.where(~mask)[0]
 
     def param_fn(name: str, p: Tensor) -> Tensor:
-        return torch.nn.Parameter(p[sel])
+        return torch.nn.Parameter(p[sel], requires_grad=p.requires_grad)
 
     def optimizer_fn(key: str, v: Tensor) -> Tensor:
         return v[sel]
@@ -222,7 +257,7 @@ def reset_opa(
     def param_fn(name: str, p: Tensor) -> Tensor:
         if name == "opacities":
             opacities = torch.clamp(p, max=torch.logit(torch.tensor(value)).item())
-            return torch.nn.Parameter(opacities)
+            return torch.nn.Parameter(opacities, requires_grad=p.requires_grad)
         else:
             raise ValueError(f"Unexpected parameter name: {name}")
 
@@ -277,7 +312,7 @@ def relocate(
         elif name == "scales":
             p[sampled_idxs] = torch.log(new_scales)
         p[dead_indices] = p[sampled_idxs]
-        return torch.nn.Parameter(p)
+        return torch.nn.Parameter(p, requires_grad=p.requires_grad)
 
     def optimizer_fn(key: str, v: Tensor) -> Tensor:
         v[sampled_idxs] = 0
@@ -318,8 +353,8 @@ def sample_add(
             p[sampled_idxs] = torch.logit(new_opacities)
         elif name == "scales":
             p[sampled_idxs] = torch.log(new_scales)
-        p = torch.cat([p, p[sampled_idxs]])
-        return torch.nn.Parameter(p)
+        p_new = torch.cat([p, p[sampled_idxs]])
+        return torch.nn.Parameter(p_new, requires_grad=p.requires_grad)
 
     def optimizer_fn(key: str, v: Tensor) -> Tensor:
         v_new = torch.zeros((len(sampled_idxs), *v.shape[1:]), device=v.device)
@@ -335,12 +370,82 @@ def sample_add(
 
 
 @torch.no_grad()
+def _cuda_fused_mcmc_perturb(
+    positions: Tensor,
+    quats: Tensor,
+    scales: Tensor,
+    opacities: Tensor,
+    scaler: float,
+) -> bool:
+    """Try the fused CUDA kernel for MCMC perturbation; return False if not applicable.
+
+    positions must be contiguous (mutated in-place); other tensors are made contiguous
+    via .contiguous() since the kernel only reads them. See
+    gsplat/cuda/csrc/MCMCPerturbCUDA.cu for the kernel.
+    """
+    try:
+        from gsplat.cuda._backend import _C
+    except ImportError:
+        _C = None  # type: ignore[assignment]
+    if _C is None or not positions.is_cuda:
+        return False
+    # positions is modified in-place — cannot .contiguous()-copy;
+    # fall back to PyTorch if non-contiguous.
+    if not positions.is_contiguous():
+        return False
+    # All inputs must be float32 CUDA tensors
+    for t in (positions, quats, scales, opacities):
+        if t.dtype != torch.float32 or not t.is_cuda:
+            return False
+    try:
+        noise = torch.randn_like(positions)
+        torch.ops.gsplat.mcmc_perturb_positions(
+            positions,
+            quats.contiguous(),
+            scales.contiguous(),
+            opacities.flatten().contiguous(),
+            noise,
+            float(scaler),
+        )
+        return True
+    except AttributeError:
+        return False
+    except RuntimeError as e:
+        import warnings
+
+        warnings.warn(
+            f"CUDA fused MCMC perturb failed, falling back to PyTorch: {e}",
+            stacklevel=2,
+        )
+        return False
+
+
+@torch.no_grad()
 def inject_noise_to_position(
     params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
     optimizers: Dict[str, torch.optim.Optimizer],
     state: Dict[str, Tensor],
     scaler: float,
 ):
+    """Add covariance- and opacity-weighted Gaussian noise to ``params["means"]`` in-place.
+
+    Prefers a fused CUDA kernel when available, with a pure-PyTorch fallback. The
+    backend can be overridden with the ``GSPLAT_MCMC_BACKEND`` env var:
+      * ``cuda`` / ``native`` / unset (default) — prefer the fused CUDA kernel.
+      * ``torch`` / ``pytorch`` / ``py`` — force the PyTorch fallback.
+    """
+    if not _force_torch_backend:
+        # Priority 1: native CUDA (single kernel launch)
+        if _cuda_fused_mcmc_perturb(
+            positions=params["means"],
+            quats=params["quats"],
+            scales=params["scales"],
+            opacities=params["opacities"],
+            scaler=scaler,
+        ):
+            return
+
+    # Priority 2: PyTorch fallback
     opacities = torch.sigmoid(params["opacities"].flatten())
     scales = torch.exp(params["scales"])
     covars, _ = quat_scale_to_covar_preci(

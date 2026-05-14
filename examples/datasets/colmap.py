@@ -1,16 +1,36 @@
-import os
+# SPDX-FileCopyrightText: Copyright 2024-2025 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-from typing_extensions import assert_never
 
 import cv2
 import imageio.v2 as imageio
 import numpy as np
 import torch
+from PIL import Image
 from pycolmap import SceneManager
+from tqdm import tqdm
+from typing_extensions import assert_never
 
+from exif import compute_exposure_from_exif
 from .normalize import (
-    align_principle_axes,
+    align_principal_axes,
     similarity_from_cameras,
     transform_cameras,
     transform_points,
@@ -26,6 +46,31 @@ def _get_rel_paths(path_dir: str) -> List[str]:
     return paths
 
 
+def _resize_image_folder(image_dir: str, resized_dir: str, factor: int) -> str:
+    """Resize image folder."""
+    print(f"Downscaling images by {factor}x from {image_dir} to {resized_dir}.")
+    os.makedirs(resized_dir, exist_ok=True)
+
+    image_files = _get_rel_paths(image_dir)
+    for image_file in tqdm(image_files):
+        image_path = os.path.join(image_dir, image_file)
+        resized_path = os.path.join(
+            resized_dir, os.path.splitext(image_file)[0] + ".png"
+        )
+        if os.path.isfile(resized_path):
+            continue
+        image = imageio.imread(image_path)[..., :3]
+        resized_size = (
+            int(round(image.shape[1] / factor)),
+            int(round(image.shape[0] / factor)),
+        )
+        resized_image = np.array(
+            Image.fromarray(image).resize(resized_size, Image.BICUBIC)
+        )
+        imageio.imwrite(resized_path, resized_image)
+    return resized_dir
+
+
 class Parser:
     """COLMAP parser."""
 
@@ -35,11 +80,13 @@ class Parser:
         factor: int = 1,
         normalize: bool = False,
         test_every: int = 8,
+        load_exposure: bool = False,
     ):
         self.data_dir = data_dir
         self.factor = factor
         self.normalize = normalize
         self.test_every = test_every
+        self.load_exposure = load_exposure
 
         colmap_dir = os.path.join(data_dir, "sparse/0/")
         if not os.path.exists(colmap_dir):
@@ -163,6 +210,11 @@ class Parser:
         # so we need to map between the two sorted lists of files.
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
+        if factor > 1 and os.path.splitext(image_files[0])[1].lower() == ".jpg":
+            image_dir = _resize_image_folder(
+                colmap_image_dir, image_dir + "_png", factor=factor
+            )
+            image_files = sorted(_get_rel_paths(image_dir))
         colmap_to_image = dict(zip(colmap_files, image_files))
         image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
 
@@ -188,11 +240,28 @@ class Parser:
             camtoworlds = transform_cameras(T1, camtoworlds)
             points = transform_points(T1, points)
 
-            T2 = align_principle_axes(points)
+            T2 = align_principal_axes(points)
             camtoworlds = transform_cameras(T2, camtoworlds)
             points = transform_points(T2, points)
 
             transform = T2 @ T1
+
+            # Fix for up side down. We assume more points towards
+            # the bottom of the scene which is true when ground floor is
+            # present in the images.
+            if np.median(points[:, 2]) > np.mean(points[:, 2]):
+                # rotate 180 degrees around x axis such that z is flipped
+                T3 = np.array(
+                    [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, -1.0, 0.0, 0.0],
+                        [0.0, 0.0, -1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                )
+                camtoworlds = transform_cameras(T3, camtoworlds)
+                points = transform_points(T3, points)
+                transform = T3 @ transform
         else:
             transform = np.eye(4)
 
@@ -209,6 +278,39 @@ class Parser:
         self.points_rgb = points_rgb  # np.ndarray, (num_points, 3)
         self.point_indices = point_indices  # Dict[str, np.ndarray], image_name -> [M,]
         self.transform = transform  # np.ndarray, (4, 4)
+
+        # Create 0-based contiguous camera indices from COLMAP camera_ids.
+        # This is useful for camera-based embeddings/modules.
+        unique_camera_ids = sorted(set(camera_ids))
+        self.camera_id_to_idx = {cid: idx for idx, cid in enumerate(unique_camera_ids)}
+        self.camera_indices = [self.camera_id_to_idx[cid] for cid in camera_ids]
+        self.num_cameras = len(unique_camera_ids)
+
+        # Load EXIF exposure data if requested.
+        # Always read from original (non-downscaled) images since PNG doesn't support EXIF.
+        if load_exposure:
+            exposure_values: List[Optional[float]] = []
+            for image_name in tqdm(image_names, desc="Loading EXIF exposure"):
+                original_path = Path(colmap_image_dir) / image_name
+                exposure_values.append(compute_exposure_from_exif(original_path))
+
+            # Compute mean across all valid exposures and subtract
+            valid_exposures = [e for e in exposure_values if e is not None]
+            if valid_exposures:
+                exposure_mean = sum(valid_exposures) / len(valid_exposures)
+                self.exposure_values: List[Optional[float]] = [
+                    (e - exposure_mean) if e is not None else None
+                    for e in exposure_values
+                ]
+                print(
+                    f"[Parser] Loaded exposure for {len(valid_exposures)}/{len(exposure_values)} images "
+                    f"(mean={exposure_mean:.3f} EV)"
+                )
+            else:
+                self.exposure_values = [None] * len(exposure_values)
+                print("[Parser] No valid EXIF exposure data found in any image.")
+        else:
+            self.exposure_values = [None] * len(image_paths)
 
         # load one image to check the size. In the case of tanksandtemples dataset, the
         # intrinsics stored in COLMAP corresponds to 2x upsampled images.
@@ -266,8 +368,8 @@ class Parser:
                     + params[2] * theta**6
                     + params[3] * theta**8
                 )
-                mapx = fx * x1 * r + width // 2
-                mapy = fy * y1 * r + height // 2
+                mapx = (fx * x1 * r + width // 2).astype(np.float32)
+                mapy = (fy * y1 * r + height // 2).astype(np.float32)
 
                 # Use mask to define ROI
                 mask = np.logical_and(
@@ -355,9 +457,17 @@ class Dataset:
             "camtoworld": torch.from_numpy(camtoworlds).float(),
             "image": torch.from_numpy(image).float(),
             "image_id": item,  # the index of the image in the dataset
+            "camera_idx": self.parser.camera_indices[
+                index
+            ],  # 0-based contiguous camera index
         }
         if mask is not None:
             data["mask"] = torch.from_numpy(mask).bool()
+
+        # Add exposure if available for this image
+        exposure = self.parser.exposure_values[index]
+        if exposure is not None:
+            data["exposure"] = torch.tensor(exposure, dtype=torch.float32)
 
         if self.load_depths:
             # projected points to image plane to get depths
@@ -389,7 +499,6 @@ if __name__ == "__main__":
     import argparse
 
     import imageio.v2 as imageio
-    import tqdm
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/360_v2/garden")
@@ -404,7 +513,7 @@ if __name__ == "__main__":
     print(f"Dataset: {len(dataset)} images.")
 
     writer = imageio.get_writer("results/points.mp4", fps=30)
-    for data in tqdm.tqdm(dataset, desc="Plotting points"):
+    for data in tqdm(dataset, desc="Plotting points"):
         image = data["image"].numpy().astype(np.uint8)
         points = data["points"].numpy()
         depths = data["depths"].numpy()

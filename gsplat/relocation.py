@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright 2024-2025 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import math
 from typing import Tuple
 
@@ -34,12 +49,6 @@ def compute_relocation(
         **new_scales**: The scales of the Gaussians. [N, 3]
     """
 
-    N_MAX = 51
-    BINOMS = torch.zeros((N_MAX, N_MAX), device=opacities.device)
-    for n in range(N_MAX):
-        for k in range(n + 1):
-            BINOMS[n, k] = math.comb(n, k)
-
     N = opacities.shape[0]
     n_max, _ = binoms.shape
     assert scales.shape == (N, 3), scales.shape
@@ -49,7 +58,7 @@ def compute_relocation(
     ratios.clamp_(min=1, max=n_max)
     ratios = ratios.int().contiguous()
 
-    new_opacities, new_scales = _make_lazy_cuda_func("compute_relocation")(
+    new_opacities, new_scales = _make_lazy_cuda_func("relocation")(
         opacities, scales, ratios, binoms, n_max
     )
     return new_opacities, new_scales

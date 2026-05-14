@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright 2024-2025 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
 import os
 import subprocess
@@ -8,9 +23,8 @@ import numpy as np
 import tyro
 
 
-def main(results_dir: str, scenes: List[str]):
+def main(results_dir: str, scenes: List[str], stage: str = "compress"):
     print("scenes:", scenes)
-    stage = "compress"
 
     summary = defaultdict(list)
     for scene in scenes:
@@ -33,7 +47,11 @@ def main(results_dir: str, scenes: List[str]):
                 summary[k].append(v)
 
     for k, v in summary.items():
-        print(k, np.mean(v))
+        summary[k] = np.mean(v)
+    summary["scenes"] = scenes
+
+    with open(os.path.join(results_dir, f"{stage}_summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
 
 
 if __name__ == "__main__":

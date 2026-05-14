@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright 2024-2025 the Regents of the University of California, Nerfstudio Team and contributors. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import numpy as np
 
 
@@ -63,7 +78,7 @@ def similarity_from_cameras(c2w, strict_scaling=False, center_method="focus"):
     return transform
 
 
-def align_principle_axes(point_cloud):
+def align_principal_axes(point_cloud):
     # Compute centroid
     centroid = np.median(point_cloud, axis=0)
 
@@ -135,7 +150,7 @@ def normalize(camtoworlds, points=None):
     camtoworlds = transform_cameras(T1, camtoworlds)
     if points is not None:
         points = transform_points(T1, points)
-        T2 = align_principle_axes(points)
+        T2 = align_principal_axes(points)
         camtoworlds = transform_cameras(T2, camtoworlds)
         points = transform_points(T2, points)
         return camtoworlds, points, T2 @ T1
