@@ -31,6 +31,10 @@ description = "Python package for differentiable rasterization of gaussians"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "jaxtyping>=0.3.9",
+    "ninja>=1.13.0",
+    "numpy>=2.1.2",
+    "rich>=15.0.0",
     "torch>=2.4.1",
     "torchaudio>=2.4.1",
     "torchvision>=0.19.1",
